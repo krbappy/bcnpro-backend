@@ -11,8 +11,17 @@ connectDB();
 
 const app = express();
 
+// CORS configuration
+const corsOptions = {
+    origin: ['https://bcnpro.vercel.app', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Root route for server test
