@@ -5,7 +5,8 @@ const {
     updateBooking,
     getBooking,
     getBookings,
-    deleteBooking
+    deleteBooking,
+    updateBookingPaymentStatus
 } = require('../controllers/bookingController');
 
 router.route('/')
@@ -16,5 +17,9 @@ router.route('/:id')
     .get(getBooking)
     .put(updateBooking)
     .delete(deleteBooking);
+
+// Payment status update route
+router.route('/:id/payment-status')
+    .patch(updateBookingPaymentStatus);
 
 module.exports = router; 

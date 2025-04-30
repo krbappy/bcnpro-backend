@@ -1,5 +1,6 @@
 const Booking = require('../models/Booking');
 const User = require('../models/User');
+const { calculateDeliveryPrice } = require('../utils/priceCalculator');
 
 // @desc    Create new booking
 // @route   POST /api/bookings
@@ -23,6 +24,10 @@ const createBooking = async (req, res) => {
             user: user._id,
             ...bookingData
         });
+
+        // Calculate the price for this delivery
+        const price = calculateDeliveryPrice(booking);
+        booking.price = price;
 
         // Log any validation errors
         booking.validateSync();
@@ -63,6 +68,25 @@ const updateBooking = async (req, res) => {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
+        // If the booking is already paid, prevent certain changes
+        if (booking.isPaid) {
+            const fieldsNotAllowedToChange = [
+                'price', 'currency', 'paymentStatus', 'paymentIntentId', 
+                'paymentMethodId', 'isPaid', 'paidAt'
+            ];
+            
+            fieldsNotAllowedToChange.forEach(field => {
+                if (field in bookingData) {
+                    delete bookingData[field];
+                }
+            });
+        } else {
+            // Recalculate price if the booking details have changed
+            const tempBooking = { ...booking.toObject(), ...bookingData };
+            const price = calculateDeliveryPrice(tempBooking);
+            bookingData.price = price;
+        }
+
         const updatedBooking = await Booking.findByIdAndUpdate(
             req.params.id,
             bookingData,
@@ -72,6 +96,52 @@ const updateBooking = async (req, res) => {
         res.json(updatedBooking);
     } catch (error) {
         console.error('Error updating booking:', error);
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Update booking payment status after successful payment
+// @route   PATCH /api/bookings/:id/payment-status
+// @access  Public
+const updateBookingPaymentStatus = async (req, res) => {
+    try {
+        const { firebaseUid, paymentIntentId, paymentMethodId, paymentStatus } = req.body;
+        
+        const user = await User.findOne({ firebaseUid });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const booking = await Booking.findOne({
+            _id: req.params.id,
+            user: user._id
+        });
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        const updateData = {
+            paymentIntentId,
+            paymentMethodId,
+            paymentStatus
+        };
+
+        // If payment is successful, mark booking as paid
+        if (paymentStatus === 'paid') {
+            updateData.isPaid = true;
+            updateData.paidAt = new Date();
+        }
+
+        const updatedBooking = await Booking.findByIdAndUpdate(
+            req.params.id,
+            updateData,
+            { new: true }
+        );
+
+        res.json(updatedBooking);
+    } catch (error) {
+        console.error('Error updating booking payment status:', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -149,5 +219,6 @@ module.exports = {
     updateBooking,
     getBooking,
     getBookings,
-    deleteBooking
+    deleteBooking,
+    updateBookingPaymentStatus
 }; 

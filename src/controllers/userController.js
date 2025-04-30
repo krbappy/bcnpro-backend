@@ -7,14 +7,14 @@ const createOrUpdateUser = async (req, res) => {
     try {
         const { email, name, phone, company, firebaseUid } = req.body;
 
-        let user = await User.findOne({ firebaseUid });
+        let user = await User.findOne({ email });
 
         if (user) {
             // Update existing user
-            user.email = email || user.email;
             user.name = name || user.name;
             user.phone = phone || user.phone;
             user.company = company || user.company;
+            user.firebaseUid = firebaseUid || user.firebaseUid;
 
             const updatedUser = await user.save();
             res.json(updatedUser);
@@ -34,12 +34,12 @@ const createOrUpdateUser = async (req, res) => {
     }
 };
 
-// @desc    Get user by Firebase UID
-// @route   GET /api/users/:firebaseUid
+// @desc    Get user by email
+// @route   GET /api/users/:email
 // @access  Public
 const getUser = async (req, res) => {
     try {
-        const user = await User.findOne({ firebaseUid: req.params.firebaseUid });
+        const user = await User.findOne({ email: req.params.email });
         
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -52,22 +52,22 @@ const getUser = async (req, res) => {
 };
 
 // @desc    Update user profile
-// @route   PUT /api/users/:firebaseUid
+// @route   PUT /api/users/:email
 // @access  Public
 const updateUser = async (req, res) => {
     try {
-        const user = await User.findOne({ firebaseUid: req.params.firebaseUid });
+        const user = await User.findOne({ email: req.params.email });
         
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const { email, name, phone, company } = req.body;
+        const { name, phone, company, firebaseUid } = req.body;
 
-        user.email = email || user.email;
         user.name = name || user.name;
         user.phone = phone || user.phone;
         user.company = company || user.company;
+        user.firebaseUid = firebaseUid || user.firebaseUid;
 
         const updatedUser = await user.save();
         res.json(updatedUser);
@@ -76,8 +76,26 @@ const updateUser = async (req, res) => {
     }
 };
 
+// @desc    Get user from auth token
+// @route   GET /api/users/me
+// @access  Private
+const getUserFromToken = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.json(user);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
 module.exports = {
     createOrUpdateUser,
     getUser,
-    updateUser
+    updateUser,
+    getUserFromToken
 }; 

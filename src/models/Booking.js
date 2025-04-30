@@ -112,6 +112,36 @@ const bookingSchema = new mongoose.Schema({
     contactInfo: {
         type: Map,
         of: contactInfoSchema
+    },
+    // Payment related fields
+    price: {
+        type: Number,
+        required: false
+    },
+    currency: {
+        type: String,
+        default: 'usd'
+    },
+    paymentStatus: {
+        type: String,
+        enum: ['pending', 'paid', 'failed', 'refunded'],
+        default: 'pending'
+    },
+    paymentIntentId: {
+        type: String,
+        required: false
+    },
+    paymentMethodId: {
+        type: String,
+        required: false
+    },
+    isPaid: {
+        type: Boolean,
+        default: false
+    },
+    paidAt: {
+        type: Date,
+        required: false
     }
 }, {
     timestamps: true
