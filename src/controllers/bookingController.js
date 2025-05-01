@@ -4,30 +4,25 @@ const { calculateDeliveryPrice } = require('../utils/priceCalculator');
 
 // @desc    Create new booking
 // @route   POST /api/bookings
-// @access  Public
+// @access  Private
 const createBooking = async (req, res) => {
     try {
         console.log('Received booking data:', JSON.stringify(req.body, null, 2));
         
-        const { firebaseUid, ...bookingData } = req.body;
+        const bookingData = req.body;
         
-        // Find user by Firebase UID
-        const user = await User.findOne({ firebaseUid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-        
-        console.log('Found user:', user._id);
+        // User is already authenticated via middleware
+        const user = req.user;
+        console.log('Found user:', user.id);
         
         // Create booking with user reference and all other data
         const booking = new Booking({
-            user: user._id,
+            user: user.id,
             ...bookingData
         });
 
         // Calculate the price for this delivery
-        const price = calculateDeliveryPrice(booking);
-        booking.price = price;
+        booking.price = bookingData.totalAmount;
 
         // Log any validation errors
         booking.validateSync();
@@ -49,19 +44,14 @@ const createBooking = async (req, res) => {
 
 // @desc    Update booking
 // @route   PUT /api/bookings/:id
-// @access  Public
+// @access  Private
 const updateBooking = async (req, res) => {
     try {
-        const { firebaseUid, ...bookingData } = req.body;
+        const bookingData = req.body;
         
-        const user = await User.findOne({ firebaseUid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
         const booking = await Booking.findOne({
             _id: req.params.id,
-            user: user._id
+            user: req.user.id
         });
 
         if (!booking) {
@@ -102,24 +92,27 @@ const updateBooking = async (req, res) => {
 
 // @desc    Update booking payment status after successful payment
 // @route   PATCH /api/bookings/:id/payment-status
-// @access  Public
+// @access  Private
 const updateBookingPaymentStatus = async (req, res) => {
     try {
-        const { firebaseUid, paymentIntentId, paymentMethodId, paymentStatus } = req.body;
+        console.log('Updating payment status for booking:', req.params.id);
+        console.log('Request body:', JSON.stringify(req.body, null, 2));
         
-        const user = await User.findOne({ firebaseUid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
+        const { paymentIntentId, paymentMethodId, paymentStatus } = req.body;
+        
+        console.log('Authenticated user ID:', req.user.id);
+        
         const booking = await Booking.findOne({
             _id: req.params.id,
-            user: user._id
+            user: req.user.id
         });
 
         if (!booking) {
+            console.log('Booking not found for user');
             return res.status(404).json({ message: 'Booking not found' });
         }
+        
+        console.log('Found booking:', booking._id, 'Current payment status:', booking.paymentStatus, 'Current isPaid:', booking.isPaid);
 
         const updateData = {
             paymentIntentId,
@@ -129,15 +122,20 @@ const updateBookingPaymentStatus = async (req, res) => {
 
         // If payment is successful, mark booking as paid
         if (paymentStatus === 'paid') {
+            console.log('Payment status is paid, updating isPaid to true');
             updateData.isPaid = true;
             updateData.paidAt = new Date();
         }
+        
+        console.log('Update data:', JSON.stringify(updateData, null, 2));
 
         const updatedBooking = await Booking.findByIdAndUpdate(
             req.params.id,
             updateData,
             { new: true }
         );
+        
+        console.log('Updated booking - payment status:', updatedBooking.paymentStatus, 'isPaid:', updatedBooking.isPaid);
 
         res.json(updatedBooking);
     } catch (error) {
@@ -148,17 +146,12 @@ const updateBookingPaymentStatus = async (req, res) => {
 
 // @desc    Get booking by ID
 // @route   GET /api/bookings/:id
-// @access  Public
+// @access  Private
 const getBooking = async (req, res) => {
     try {
-        const user = await User.findOne({ firebaseUid: req.query.firebaseUid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
         const booking = await Booking.findOne({
             _id: req.params.id,
-            user: user._id
+            user: req.user.id
         });
 
         if (!booking) {
@@ -173,15 +166,10 @@ const getBooking = async (req, res) => {
 
 // @desc    Get all bookings for a user
 // @route   GET /api/bookings
-// @access  Public
+// @access  Private
 const getBookings = async (req, res) => {
     try {
-        const user = await User.findOne({ firebaseUid: req.query.firebaseUid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        const bookings = await Booking.find({ user: user._id });
+        const bookings = await Booking.find({ user: req.user.id });
         res.json(bookings);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -190,17 +178,12 @@ const getBookings = async (req, res) => {
 
 // @desc    Delete booking
 // @route   DELETE /api/bookings/:id
-// @access  Public
+// @access  Private
 const deleteBooking = async (req, res) => {
     try {
-        const user = await User.findOne({ firebaseUid: req.body.firebaseUid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
         const booking = await Booking.findOne({
             _id: req.params.id,
-            user: user._id
+            user: req.user.id
         });
 
         if (!booking) {

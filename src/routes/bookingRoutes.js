@@ -8,6 +8,10 @@ const {
     deleteBooking,
     updateBookingPaymentStatus
 } = require('../controllers/bookingController');
+const { protect } = require('../middleware/authMiddleware');
+
+// Apply authentication middleware to all booking routes
+router.use(protect);
 
 router.route('/')
     .post(createBooking)

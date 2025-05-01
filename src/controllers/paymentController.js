@@ -1,6 +1,7 @@
 const stripe = require('../config/stripe');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
+const Booking = require('../models/Booking');
 
 // @desc    Create a customer in Stripe if not exists
 // @route   POST /api/payments/create-customer
@@ -163,7 +164,7 @@ const createCharge = asyncHandler(async (req, res) => {
 
         // Create a payment intent
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: Math.round(amount * 100), // Stripe requires amount in cents
+            amount: amount, // Stripe requires amount in cents
             currency: 'usd',
             customer: user.stripeCustomerId,
             description: `Booking ID: ${bookingId} - ${description}`,
@@ -179,6 +180,28 @@ const createCharge = asyncHandler(async (req, res) => {
             }
         });
 
+        // Update the booking's payment status if payment was successful
+        if (paymentIntent.status === 'succeeded') {
+            console.log('Payment succeeded, updating booking payment status');
+            
+            // Find and update the booking
+            const updatedBooking = await Booking.findByIdAndUpdate(
+                bookingId,
+                {
+                    paymentIntentId: paymentIntent.id,
+                    paymentMethodId: paymentMethodId,
+                    paymentStatus: 'paid',
+                    isPaid: true,
+                    paidAt: new Date()
+                },
+                { new: true }
+            );
+            
+            console.log('Updated booking payment status:', updatedBooking.paymentStatus, 'isPaid:', updatedBooking.isPaid);
+        } else {
+            console.log('Payment not succeeded:', paymentIntent.status);
+        }
+
         res.status(201).json({
             success: true,
             paymentIntentId: paymentIntent.id,
@@ -186,6 +209,7 @@ const createCharge = asyncHandler(async (req, res) => {
             message: 'Payment processed successfully'
         });
     } catch (error) {
+        console.error('Payment failed:', error);
         res.status(400);
         throw new Error(`Payment failed: ${error.message}`);
     }
