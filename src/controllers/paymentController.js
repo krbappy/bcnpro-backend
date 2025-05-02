@@ -192,12 +192,13 @@ const createCharge = asyncHandler(async (req, res) => {
                     paymentMethodId: paymentMethodId,
                     paymentStatus: 'paid',
                     isPaid: true,
-                    paidAt: new Date()
+                    paidAt: new Date(),
+                    orderStatus: 'processing' // Update order status to processing after payment
                 },
                 { new: true }
             );
             
-            console.log('Updated booking payment status:', updatedBooking.paymentStatus, 'isPaid:', updatedBooking.isPaid);
+            console.log('Updated booking payment status:', updatedBooking.paymentStatus, 'isPaid:', updatedBooking.isPaid, 'orderStatus:', updatedBooking.orderStatus);
         } else {
             console.log('Payment not succeeded:', paymentIntent.status);
         }

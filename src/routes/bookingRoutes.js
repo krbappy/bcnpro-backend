@@ -6,7 +6,8 @@ const {
     getBooking,
     getBookings,
     deleteBooking,
-    updateBookingPaymentStatus
+    updateBookingPaymentStatus,
+    updateBookingOrderStatus
 } = require('../controllers/bookingController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -25,5 +26,9 @@ router.route('/:id')
 // Payment status update route
 router.route('/:id/payment-status')
     .patch(updateBookingPaymentStatus);
+
+// Order status update route
+router.route('/:id/order-status')
+    .patch(updateBookingOrderStatus);
 
 module.exports = router; 

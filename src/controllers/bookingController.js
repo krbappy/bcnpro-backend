@@ -197,11 +197,63 @@ const deleteBooking = async (req, res) => {
     }
 };
 
+// @desc    Update booking order status
+// @route   PATCH /api/bookings/:id/order-status
+// @access  Private
+const updateBookingOrderStatus = async (req, res) => {
+    try {
+        console.log('Updating order status for booking:', req.params.id);
+        console.log('Request body:', JSON.stringify(req.body, null, 2));
+        
+        const { orderStatus } = req.body;
+        
+        if (!orderStatus) {
+            return res.status(400).json({ message: 'Order status is required' });
+        }
+        
+        // Validate order status
+        const validStatuses = ['pending', 'processing', 'in_transit', 'delivered', 'cancelled'];
+        if (!validStatuses.includes(orderStatus)) {
+            return res.status(400).json({ 
+                message: `Invalid order status. Must be one of: ${validStatuses.join(', ')}` 
+            });
+        }
+        
+        console.log('Authenticated user ID:', req.user.id);
+        
+        const booking = await Booking.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
+
+        if (!booking) {
+            console.log('Booking not found for user');
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+        
+        console.log('Found booking:', booking._id, 'Current order status:', booking.orderStatus);
+
+        const updatedBooking = await Booking.findByIdAndUpdate(
+            req.params.id,
+            { orderStatus },
+            { new: true }
+        );
+        
+        console.log('Updated booking - new order status:', updatedBooking.orderStatus);
+
+        res.json(updatedBooking);
+    } catch (error) {
+        console.error('Error updating booking order status:', error);
+        res.status(400).json({ message: error.message });
+    }
+};
+
 module.exports = {
     createBooking,
     updateBooking,
     getBooking,
     getBookings,
     deleteBooking,
-    updateBookingPaymentStatus
+    updateBookingPaymentStatus,
+    updateBookingOrderStatus
 }; 

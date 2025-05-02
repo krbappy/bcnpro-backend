@@ -113,6 +113,12 @@ const bookingSchema = new mongoose.Schema({
         type: Map,
         of: contactInfoSchema
     },
+    // Order status field
+    orderStatus: {
+        type: String,
+        enum: ['pending', 'processing', 'in_transit', 'delivered', 'cancelled'],
+        default: 'pending'
+    },
     // Payment related fields
     price: {
         type: Number,
