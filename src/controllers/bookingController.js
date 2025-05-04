@@ -1,6 +1,7 @@
 const Booking = require('../models/Booking');
 const User = require('../models/User');
 const { calculateDeliveryPrice } = require('../utils/priceCalculator');
+const Team = require('../models/Team');
 
 // @desc    Create new booking
 // @route   POST /api/bookings
@@ -164,14 +165,51 @@ const getBooking = async (req, res) => {
     }
 };
 
-// @desc    Get all bookings for a user
+// @desc    Get all bookings for a user and their team
 // @route   GET /api/bookings
 // @access  Private
 const getBookings = async (req, res) => {
     try {
-        const bookings = await Booking.find({ user: req.user.id });
+        console.log('Fetching bookings for user:', req.user.id);
+        
+        // Get the user with their team info
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        
+        let bookings = [];
+        
+        // If user is part of a team
+        if (user.team) {
+            console.log('User is part of team:', user.team);
+            
+            // Get the team to check roles
+            const team = await Team.findById(user.team)
+                .populate('members.user');
+            
+            if (team) {
+                // Get all team member IDs
+                const teamMemberIds = team.members.map(member => member.user._id);
+                console.log('Team member IDs:', teamMemberIds);
+                
+                // Fetch all bookings from team members
+                bookings = await Booking.find({
+                    user: { $in: teamMemberIds }
+                }).populate('user', 'name email');
+                
+                console.log(`Found ${bookings.length} team bookings`);
+            }
+        } else {
+            // If user is not part of a team, just get their bookings
+            console.log('User is not part of a team, fetching personal bookings');
+            bookings = await Booking.find({ user: req.user.id })
+                .populate('user', 'name email');
+        }
+        
         res.json(bookings);
     } catch (error) {
+        console.error('Error fetching bookings:', error);
         res.status(400).json({ message: error.message });
     }
 };

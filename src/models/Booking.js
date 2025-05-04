@@ -82,7 +82,8 @@ const bookingSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
+        index: true
     },
     stops: [Number],
     selectedAddresses: {
@@ -152,6 +153,9 @@ const bookingSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// Add compound index for user + createdAt for efficient sorting
+bookingSchema.index({ user: 1, createdAt: -1 });
 
 const Booking = mongoose.model('Booking', bookingSchema);
 module.exports = Booking; 

@@ -1,6 +1,7 @@
 const stripe = require('../config/stripe');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
+const Team = require('../models/Team');
 const Booking = require('../models/Booking');
 
 // @desc    Create a customer in Stripe if not exists
@@ -93,6 +94,63 @@ const getPaymentMethods = asyncHandler(async (req, res) => {
     res.json(paymentMethods.data);
 });
 
+// @desc    Get all payment methods for a team
+// @route   GET /api/payments/team-payment-methods
+// @access  Private
+const getTeamPaymentMethods = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+    
+    if (!user.team) {
+        res.status(400);
+        throw new Error('User is not part of a team');
+    }
+    
+    // Get the team and its members
+    const team = await Team.findById(user.team)
+        .populate('members.user')
+        .populate('owner');
+    
+    if (!team) {
+        res.status(404);
+        throw new Error('Team not found');
+    }
+    
+    // Get all team members with Stripe customer IDs
+    const teamMembers = [
+        team.owner,
+        ...team.members.map(member => member.user)
+    ].filter(member => member && member.stripeCustomerId);
+    
+    // Fetch payment methods for all team members
+    const paymentMethodsPromises = teamMembers.map(async (member) => {
+        const methods = await stripe.paymentMethods.list({
+            customer: member.stripeCustomerId,
+            type: 'card',
+        });
+        
+        return methods.data.map(method => ({
+            ...method,
+            ownerName: member.name || member.email,
+            ownerEmail: member.email,
+            isAdmin: member.isAdmin
+        }));
+    });
+    
+    const allPaymentMethods = await Promise.all(paymentMethodsPromises);
+    
+    // Flatten the array and sort to show admin payment methods first
+    const paymentMethods = allPaymentMethods
+        .flat()
+        .sort((a, b) => (b.isAdmin ? 1 : 0) - (a.isAdmin ? 1 : 0));
+    
+    res.json(paymentMethods);
+});
+
 // @desc    Set default payment method for a customer
 // @route   POST /api/payments/set-default-payment-method
 // @access  Private
@@ -132,7 +190,7 @@ const setDefaultPaymentMethod = asyncHandler(async (req, res) => {
 // @route   POST /api/payments/charge
 // @access  Private
 const createCharge = asyncHandler(async (req, res) => {
-    const { bookingId, amount, paymentMethodId, description } = req.body;
+    const { bookingId, amount, description } = req.body;
 
     if (!bookingId || !amount || !description) {
         res.status(400);
@@ -151,29 +209,81 @@ const createCharge = asyncHandler(async (req, res) => {
         throw new Error('User not found');
     }
     
-    if (!user.stripeCustomerId) {
+    let stripeCustomerId = null;
+    let paymentMethodId = null;
+    
+    // Function to get payment method from a customer
+    const getCustomerPaymentMethod = async (customerId) => {
+        const methods = await stripe.paymentMethods.list({
+            customer: customerId,
+            type: 'card',
+        });
+        return methods.data[0]; // Get the first available payment method
+    };
+
+    // First try user's own payment method
+    if (user.stripeCustomerId) {
+        const userPaymentMethod = await getCustomerPaymentMethod(user.stripeCustomerId);
+        if (userPaymentMethod) {
+            stripeCustomerId = user.stripeCustomerId;
+            paymentMethodId = userPaymentMethod.id;
+            console.log('Using user\'s own payment method:', paymentMethodId);
+        }
+    }
+
+    // If no user payment method and user is in a team, try team members' payment methods
+    if (!paymentMethodId && user.team) {
+        console.log('Looking for team payment methods');
+        const team = await Team.findById(user.team)
+            .populate('owner')
+            .populate('members.user');
+
+        if (team) {
+            // First try team owner's payment method
+            if (team.owner && team.owner.stripeCustomerId) {
+                const ownerPaymentMethod = await getCustomerPaymentMethod(team.owner.stripeCustomerId);
+                if (ownerPaymentMethod) {
+                    stripeCustomerId = team.owner.stripeCustomerId;
+                    paymentMethodId = ownerPaymentMethod.id;
+                    console.log('Using team owner\'s payment method:', paymentMethodId);
+                }
+            }
+
+            // If still no payment method, try other team members
+            if (!paymentMethodId) {
+                for (const member of team.members) {
+                    if (member.user && member.user.stripeCustomerId) {
+                        const memberPaymentMethod = await getCustomerPaymentMethod(member.user.stripeCustomerId);
+                        if (memberPaymentMethod) {
+                            stripeCustomerId = member.user.stripeCustomerId;
+                            paymentMethodId = memberPaymentMethod.id;
+                            console.log('Using team member\'s payment method:', paymentMethodId);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!stripeCustomerId || !paymentMethodId) {
         res.status(400);
-        throw new Error('No Stripe customer found');
+        throw new Error('No payment method available in the team. Please add a payment method or contact your team admin.');
     }
 
     try {
-        // If paymentMethodId is provided, use it; otherwise use the default payment method
-        const paymentOptions = paymentMethodId 
-            ? { payment_method: paymentMethodId } 
-            : {};
-
         // Create a payment intent
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: amount, // Stripe requires amount in cents
+            amount: amount,
             currency: 'usd',
-            customer: user.stripeCustomerId,
+            customer: stripeCustomerId,
+            payment_method: paymentMethodId,
             description: `Booking ID: ${bookingId} - ${description}`,
             metadata: {
                 bookingId,
                 userId: user.id
             },
-            ...paymentOptions,
-            confirm: true, // Auto confirm the payment
+            confirm: true,
             automatic_payment_methods: {
                 enabled: true,
                 allow_redirects: 'never'
@@ -184,7 +294,6 @@ const createCharge = asyncHandler(async (req, res) => {
         if (paymentIntent.status === 'succeeded') {
             console.log('Payment succeeded, updating booking payment status');
             
-            // Find and update the booking
             const updatedBooking = await Booking.findByIdAndUpdate(
                 bookingId,
                 {
@@ -193,14 +302,12 @@ const createCharge = asyncHandler(async (req, res) => {
                     paymentStatus: 'paid',
                     isPaid: true,
                     paidAt: new Date(),
-                    orderStatus: 'processing' // Update order status to processing after payment
+                    orderStatus: 'processing'
                 },
                 { new: true }
             );
             
-            console.log('Updated booking payment status:', updatedBooking.paymentStatus, 'isPaid:', updatedBooking.isPaid, 'orderStatus:', updatedBooking.orderStatus);
-        } else {
-            console.log('Payment not succeeded:', paymentIntent.status);
+            console.log('Updated booking payment status:', updatedBooking.paymentStatus);
         }
 
         res.status(201).json({
@@ -256,11 +363,117 @@ const deletePaymentMethod = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Check available payment methods for user and team
+// @route   GET /api/payments/check-payment-method
+// @access  Private
+const checkPaymentMethod = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    let paymentMethodInfo = {
+        hasPaymentMethod: false,
+        paymentMethodDetails: null,
+        teamPaymentAvailable: false,
+        message: ''
+    };
+
+    // Check user's own payment method
+    if (user.stripeCustomerId) {
+        const userPaymentMethods = await stripe.paymentMethods.list({
+            customer: user.stripeCustomerId,
+            type: 'card',
+        });
+
+        if (userPaymentMethods.data.length > 0) {
+            const method = userPaymentMethods.data[0];
+            paymentMethodInfo.hasPaymentMethod = true;
+            paymentMethodInfo.paymentMethodDetails = {
+                last4: method.card.last4,
+                brand: method.card.brand,
+                expiryMonth: method.card.exp_month,
+                expiryYear: method.card.exp_year,
+                owner: 'self'
+            };
+            paymentMethodInfo.message = 'User has their own payment method';
+        }
+    }
+
+    // If no user payment method and user is in a team, check team members
+    if (!paymentMethodInfo.hasPaymentMethod && user.team) {
+        const team = await Team.findById(user.team)
+            .populate('owner')
+            .populate('members.user');
+
+        if (team) {
+            // Check team owner's payment method
+            if (team.owner && team.owner.stripeCustomerId) {
+                const ownerPaymentMethods = await stripe.paymentMethods.list({
+                    customer: team.owner.stripeCustomerId,
+                    type: 'card',
+                });
+
+                if (ownerPaymentMethods.data.length > 0) {
+                    const method = ownerPaymentMethods.data[0];
+                    paymentMethodInfo.teamPaymentAvailable = true;
+                    paymentMethodInfo.paymentMethodDetails = {
+                        last4: method.card.last4,
+                        brand: method.card.brand,
+                        expiryMonth: method.card.exp_month,
+                        expiryYear: method.card.exp_year,
+                        owner: 'team_owner',
+                        ownerName: team.owner.name || team.owner.email
+                    };
+                    paymentMethodInfo.message = 'Team owner payment method available';
+                }
+            }
+
+            // If no owner payment method, check other team members
+            if (!paymentMethodInfo.teamPaymentAvailable) {
+                for (const member of team.members) {
+                    if (member.user && member.user.stripeCustomerId) {
+                        const memberPaymentMethods = await stripe.paymentMethods.list({
+                            customer: member.user.stripeCustomerId,
+                            type: 'card',
+                        });
+
+                        if (memberPaymentMethods.data.length > 0) {
+                            const method = memberPaymentMethods.data[0];
+                            paymentMethodInfo.teamPaymentAvailable = true;
+                            paymentMethodInfo.paymentMethodDetails = {
+                                last4: method.card.last4,
+                                brand: method.card.brand,
+                                expiryMonth: method.card.exp_month,
+                                expiryYear: method.card.exp_year,
+                                owner: 'team_member',
+                                ownerName: member.user.name || member.user.email
+                            };
+                            paymentMethodInfo.message = 'Team member payment method available';
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!paymentMethodInfo.hasPaymentMethod && !paymentMethodInfo.teamPaymentAvailable) {
+        paymentMethodInfo.message = 'No payment method available. Please add a payment method or contact your team admin.';
+    }
+
+    res.json(paymentMethodInfo);
+});
+
 module.exports = {
     createStripeCustomer,
     createSetupIntent,
     getPaymentMethods,
+    getTeamPaymentMethods,
     setDefaultPaymentMethod,
     createCharge,
-    deletePaymentMethod
+    deletePaymentMethod,
+    checkPaymentMethod
 }; 

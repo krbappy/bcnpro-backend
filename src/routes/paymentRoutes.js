@@ -4,9 +4,11 @@ const {
     createStripeCustomer,
     createSetupIntent,
     getPaymentMethods,
+    getTeamPaymentMethods,
     setDefaultPaymentMethod,
     createCharge,
-    deletePaymentMethod
+    deletePaymentMethod,
+    checkPaymentMethod
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -17,6 +19,8 @@ router.use(protect);
 router.post('/create-customer', createStripeCustomer);
 router.post('/setup-intent', createSetupIntent);
 router.get('/payment-methods', getPaymentMethods);
+router.get('/team-payment-methods', getTeamPaymentMethods);
+router.get('/check-payment-method', checkPaymentMethod);
 router.post('/set-default-payment-method', setDefaultPaymentMethod);
 router.delete('/payment-methods/:id', deletePaymentMethod);
 
