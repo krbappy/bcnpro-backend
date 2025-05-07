@@ -3,12 +3,15 @@ const mongoose = require('mongoose');
 
 // @desc    Create a new route
 // @route   POST /api/routes
-// @access  Public
+// @access  Private
 const createRoute = async (req, res) => {
     try {
         // Create a new object without _id
         const routeData = { ...req.body };
         delete routeData._id; // Explicitly delete _id
+        
+        // Add user ID from authenticated user
+        routeData.user = req.user._id;
         
         // Log the data being sent to create
         console.log('Creating route with data:', routeData);
@@ -24,12 +27,12 @@ const createRoute = async (req, res) => {
     }
 };
 
-// @desc    Get all routes
+// @desc    Get all routes for logged in user
 // @route   GET /api/routes
-// @access  Public
+// @access  Private
 const getRoutes = async (req, res) => {
     try {
-        const routes = await Route.find({});
+        const routes = await Route.find({ user: req.user._id });
         res.status(200).json(routes);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -38,14 +41,18 @@ const getRoutes = async (req, res) => {
 
 // @desc    Get single route
 // @route   GET /api/routes/:id
-// @access  Public
+// @access  Private
 const getRoute = async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({ message: 'Invalid route ID format' });
         }
 
-        const route = await Route.findById(req.params.id);
+        const route = await Route.findOne({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
         if (!route) {
             return res.status(404).json({ message: 'Route not found' });
         }
@@ -57,7 +64,7 @@ const getRoute = async (req, res) => {
 
 // @desc    Update route
 // @route   PUT /api/routes/:id
-// @access  Public
+// @access  Private
 const updateRoute = async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -67,12 +74,14 @@ const updateRoute = async (req, res) => {
         // Create a new object without _id
         const routeData = { ...req.body };
         delete routeData._id; // Explicitly delete _id
+        delete routeData.user; // Prevent user field from being updated
 
-        const route = await Route.findByIdAndUpdate(
-            req.params.id,
+        const route = await Route.findOneAndUpdate(
+            { _id: req.params.id, user: req.user._id },
             routeData,
             { new: true, runValidators: true }
         );
+
         if (!route) {
             return res.status(404).json({ message: 'Route not found' });
         }
@@ -84,14 +93,18 @@ const updateRoute = async (req, res) => {
 
 // @desc    Delete route
 // @route   DELETE /api/routes/:id
-// @access  Public
+// @access  Private
 const deleteRoute = async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({ message: 'Invalid route ID format' });
         }
 
-        const route = await Route.findByIdAndDelete(req.params.id);
+        const route = await Route.findOneAndDelete({
+            _id: req.params.id,
+            user: req.user._id
+        });
+
         if (!route) {
             return res.status(404).json({ message: 'Route not found' });
         }

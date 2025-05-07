@@ -7,6 +7,10 @@ const {
     updateRoute,
     deleteRoute
 } = require('../controllers/routeController');
+const { protect } = require('../middleware/authMiddleware');
+
+// All routes are protected
+router.use(protect);
 
 router.route('/')
     .post(createRoute)
