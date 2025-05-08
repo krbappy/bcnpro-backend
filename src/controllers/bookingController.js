@@ -178,6 +178,8 @@ const getBookings = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
         
+        console.log('User team ID:', user.team);
+        
         let bookings = [];
         
         // If user is part of a team
@@ -186,25 +188,40 @@ const getBookings = async (req, res) => {
             
             // Get the team to check roles
             const team = await Team.findById(user.team)
-                .populate('members.user');
-            
-            if (team) {
-                // Get all team member IDs
-                const teamMemberIds = team.members.map(member => member.user._id);
-                console.log('Team member IDs:', teamMemberIds);
+                .populate({
+                    path: 'members.user',
+                    select: '_id name email'
+                });
                 
-                // Fetch all bookings from team members
-                bookings = await Booking.find({
-                    user: { $in: teamMemberIds }
-                }).populate('user', 'name email');
-                
-                console.log(`Found ${bookings.length} team bookings`);
+            if (!team) {
+                console.log('Team not found, falling back to personal bookings');
+                // If team is not found, just get the user's personal bookings
+                bookings = await Booking.find({ user: req.user.id })
+                    .populate('user', 'name email')
+                    .sort({ createdAt: -1 });
+                return res.json(bookings);
             }
+            
+            console.log('Team members:', team.members);
+            
+            // Get all team member IDs
+            const teamMemberIds = team.members.map(member => member.user._id);
+            console.log('Team member IDs:', teamMemberIds);
+            
+            // Fetch all bookings from team members
+            bookings = await Booking.find({
+                user: { $in: teamMemberIds }
+            })
+            .populate('user', 'name email')
+            .sort({ createdAt: -1 });
+            
+            console.log(`Found ${bookings.length} team bookings`);
         } else {
             // If user is not part of a team, just get their bookings
             console.log('User is not part of a team, fetching personal bookings');
             bookings = await Booking.find({ user: req.user.id })
-                .populate('user', 'name email');
+                .populate('user', 'name email')
+                .sort({ createdAt: -1 });
         }
         
         res.json(bookings);
