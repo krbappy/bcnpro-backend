@@ -40,6 +40,7 @@ app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/teams', require('./routes/teamRoutes'));
 app.use('/api/routes', require('./routes/routeRoutes'));
+app.use('/api/address-book', require('./routes/addressBookRoutes'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
