@@ -2,6 +2,7 @@ const Booking = require('../models/Booking');
 const User = require('../models/User');
 const { calculateDeliveryPrice } = require('../utils/priceCalculator');
 const Team = require('../models/Team');
+const notificationService = require('../services/notificationService');
 
 // @desc    Create new booking
 // @route   POST /api/bookings
@@ -33,6 +34,15 @@ const createBooking = async (req, res) => {
 
         const createdBooking = await booking.save();
         console.log('Booking created with ID:', createdBooking._id);
+
+        // Send notification to the user who created the booking
+        const io = req.app.get('io');
+        await notificationService.sendBookingNotification({
+            userId: req.user.id,
+            bookingId: createdBooking._id,
+            status: 'created'
+        }, io);
+
         res.status(201).json(createdBooking);
     } catch (error) {
         console.error('Error creating booking:', error);
@@ -83,6 +93,14 @@ const updateBooking = async (req, res) => {
             bookingData,
             { new: true, runValidators: true }
         );
+
+        // Send notification about status change
+        const io = req.app.get('io');
+        await notificationService.sendBookingNotification({
+            userId: booking.user,
+            bookingId: updatedBooking._id,
+            status: updatedBooking.orderStatus
+        }, io);
 
         res.json(updatedBooking);
     } catch (error) {
@@ -137,6 +155,14 @@ const updateBookingPaymentStatus = async (req, res) => {
         );
         
         console.log('Updated booking - payment status:', updatedBooking.paymentStatus, 'isPaid:', updatedBooking.isPaid);
+
+        // Send notification about status change
+        const io = req.app.get('io');
+        await notificationService.sendBookingNotification({
+            userId: booking.user,
+            bookingId: updatedBooking._id,
+            status: updatedBooking.orderStatus
+        }, io);
 
         res.json(updatedBooking);
     } catch (error) {
@@ -295,6 +321,14 @@ const updateBookingOrderStatus = async (req, res) => {
         );
         
         console.log('Updated booking - new order status:', updatedBooking.orderStatus);
+
+        // Send notification about status change
+        const io = req.app.get('io');
+        await notificationService.sendBookingNotification({
+            userId: booking.user,
+            bookingId: updatedBooking._id,
+            status: updatedBooking.orderStatus
+        }, io);
 
         res.json(updatedBooking);
     } catch (error) {

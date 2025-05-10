@@ -1,6 +1,7 @@
 const Team = require('../models/Team');
 const User = require('../models/User');
 const { sendTeamInvitation } = require('../utils/emailService');
+const notificationService = require('../services/notificationService');
 
 // @desc    Create a new team
 // @route   POST /api/teams
@@ -32,6 +33,14 @@ const createTeam = async (req, res) => {
         user.isAdmin = true;
         await user.save();
         
+        // Send notification to team creator
+        const io = req.app.get('io');
+        await notificationService.sendTeamNotification({
+            userId: req.user._id,
+            teamName: team.name,
+            action: 'created'
+        }, io);
+
         res.status(201).json(team);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -186,6 +195,14 @@ const inviteToTeam = async (req, res) => {
             throw new Error('Failed to send invitation email');
         }
         
+        // Send notification to the new member
+        const io = req.app.get('io');
+        await notificationService.sendTeamNotification({
+            userId: user ? user._id : req.user._id,
+            teamName: team.name,
+            action: 'member_added'
+        }, io);
+
         res.status(200).json({ 
             message: user ? 'User added to team and invitation sent' : 'Invitation sent successfully'
         });
@@ -288,6 +305,14 @@ const acceptInvitation = async (req, res) => {
             user.save()
         ]);
         
+        // Send notification to the new member
+        const io = req.app.get('io');
+        await notificationService.sendTeamNotification({
+            userId: user._id,
+            teamName: team.name,
+            action: 'member_added'
+        }, io);
+
         console.log('Invitation accepted successfully');
         res.status(200).json({ message: 'Invitation accepted successfully' });
     } catch (error) {
@@ -367,6 +392,14 @@ const removeTeamMember = async (req, res) => {
             console.log('Updated removed user status');
         }
         
+        // Send notification to the removed member
+        const io = req.app.get('io');
+        await notificationService.sendTeamNotification({
+            userId: req.params.userId,
+            teamName: team.name,
+            action: 'member_removed'
+        }, io);
+
         res.status(200).json({ message: 'Team member removed successfully' });
     } catch (error) {
         console.error('Error removing team member:', error);

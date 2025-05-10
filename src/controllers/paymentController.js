@@ -3,6 +3,7 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Team = require('../models/Team');
 const Booking = require('../models/Booking');
+const notificationService = require('../services/notificationService');
 
 // @desc    Create a customer in Stripe if not exists
 // @route   POST /api/payments/create-customer
@@ -309,6 +310,14 @@ const createCharge = asyncHandler(async (req, res) => {
             
             console.log('Updated booking payment status:', updatedBooking.paymentStatus);
         }
+
+        // Send notification about payment
+        const io = req.app.get('io');
+        await notificationService.sendPaymentNotification({
+            userId: req.user.id,
+            amount: amount,
+            status: paymentIntent.status
+        }, io);
 
         res.status(201).json({
             success: true,
