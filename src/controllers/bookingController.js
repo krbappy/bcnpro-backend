@@ -37,11 +37,13 @@ const createBooking = async (req, res) => {
 
         // Send notification to the user who created the booking
         const io = req.app.get('io');
-        await notificationService.sendBookingNotification({
+        const response = await notificationService.sendBookingNotification({
             userId: req.user.id,
             bookingId: createdBooking._id,
             status: 'created'
         }, io);
+
+        console.log('Notification response:---------->', response);
 
         res.status(201).json(createdBooking);
     } catch (error) {

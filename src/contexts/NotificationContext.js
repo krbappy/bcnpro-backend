@@ -17,11 +17,11 @@ export const NotificationProvider = ({ children }) => {
         const userId = localStorage.getItem('userId');
         
         if (!token || !userId) {
-            console.log('No token or userId found, skipping socket connection');
+            console.log('[NotificationContext] No token or userId found, skipping socket connection');
             return;
         }
 
-        console.log('Initializing socket connection with:', {
+        console.log('[NotificationContext] Initializing socket connection with:', {
             url: process.env.REACT_APP_API_URL,
             userId
         });
@@ -33,25 +33,25 @@ export const NotificationProvider = ({ children }) => {
 
         // Connection event handlers
         newSocket.on('connect', () => {
-            console.log('Socket connected successfully');
+            console.log('[NotificationContext] Socket connected successfully. Socket ID:', newSocket.id);
             setConnectionStatus('connected');
             setError(null);
         });
 
         newSocket.on('connect_error', (err) => {
-            console.error('Socket connection error:', err);
+            console.error('[NotificationContext] Socket connection error:', err);
             setConnectionStatus('error');
             setError(err.message);
         });
 
-        newSocket.on('disconnect', () => {
-            console.log('Socket disconnected');
+        newSocket.on('disconnect', (reason) => {
+            console.log('[NotificationContext] Socket disconnected. Reason:', reason);
             setConnectionStatus('disconnected');
         });
 
         // Listen for new notifications
         newSocket.on('new_notification', (notification) => {
-            console.log('Received new notification:', notification);
+            console.log('[NotificationContext] SUCCESS: Received new_notification event from server:', notification);
             setNotifications(prev => [notification, ...prev]);
             setUnreadCount(prev => prev + 1);
         });
@@ -59,7 +59,7 @@ export const NotificationProvider = ({ children }) => {
         setSocket(newSocket);
 
         return () => {
-            console.log('Cleaning up socket connection');
+            console.log('[NotificationContext] Cleaning up socket connection');
             newSocket.close();
         };
     }, []);
@@ -69,22 +69,22 @@ export const NotificationProvider = ({ children }) => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
-                console.log('No token found, skipping notification fetch');
+                console.log('[NotificationContext] No token found, skipping notification fetch');
                 return;
             }
 
-            console.log('Fetching notifications...');
+            console.log('[NotificationContext] Fetching notifications...');
             const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/notifications`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             });
             
-            console.log('Fetched notifications:', response.data);
+            console.log('[NotificationContext] Fetched notifications:', response.data);
             setNotifications(response.data);
             setUnreadCount(response.data.filter(n => !n.seen).length);
         } catch (error) {
-            console.error('Error fetching notifications:', error);
+            console.error('[NotificationContext] Error fetching notifications:', error);
             setError(error.message);
         }
     };
@@ -94,11 +94,11 @@ export const NotificationProvider = ({ children }) => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
-                console.log('No token found, skipping mark as read');
+                console.log('[NotificationContext] No token found, skipping mark as read');
                 return;
             }
 
-            console.log('Marking notification as read:', notificationId);
+            console.log('[NotificationContext] Marking notification as read:', notificationId);
             await axios.patch(
                 `${process.env.REACT_APP_API_URL}/api/notifications/${notificationId}/read`,
                 {},
@@ -118,7 +118,7 @@ export const NotificationProvider = ({ children }) => {
             );
             setUnreadCount(prev => Math.max(0, prev - 1));
         } catch (error) {
-            console.error('Error marking notification as read:', error);
+            console.error('[NotificationContext] Error marking notification as read:', error);
             setError(error.message);
         }
     };
@@ -128,11 +128,11 @@ export const NotificationProvider = ({ children }) => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
-                console.log('No token found, skipping mark all as read');
+                console.log('[NotificationContext] No token found, skipping mark all as read');
                 return;
             }
 
-            console.log('Marking all notifications as read');
+            console.log('[NotificationContext] Marking all notifications as read');
             await axios.patch(
                 `${process.env.REACT_APP_API_URL}/api/notifications/mark-all-read`,
                 {},
@@ -148,7 +148,7 @@ export const NotificationProvider = ({ children }) => {
             );
             setUnreadCount(0);
         } catch (error) {
-            console.error('Error marking all notifications as read:', error);
+            console.error('[NotificationContext] Error marking all notifications as read:', error);
             setError(error.message);
         }
     };

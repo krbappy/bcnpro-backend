@@ -26,7 +26,12 @@ const corsOptions = {
 
 // Socket.IO setup
 const io = new Server(httpServer, {
-    cors: corsOptions
+    cors: {
+        origin: ['https://bcnpro.vercel.app', 'http://localhost:3000'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        credentials: true
+    }
 });
 
 // Store io instance globally
@@ -35,6 +40,8 @@ app.set('io', io);
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     const userId = socket.handshake.query.userId;
+    console.log('Handshake query:', socket.handshake.query);
+
     if (userId) {
         socket.join(userId);
         console.log(`User ${userId} connected`);
