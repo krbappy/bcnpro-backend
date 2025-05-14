@@ -78,6 +78,14 @@ const contactInfoSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+const vehicleTypeSchema = new mongoose.Schema({
+    type: {
+        type: String,
+        required: false
+    },
+    additionalInfo: String
+}, { _id: false });
+
 const bookingSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
@@ -94,7 +102,10 @@ const bookingSchema = new mongoose.Schema({
         meters: Number,
         displayValue: String
     },
-    vehicleType: String,
+    vehicleType: {
+        type: vehicleTypeSchema,
+        required: false
+    },
     deliveryTiming: {
         date: String,
         timeWindow: String,
