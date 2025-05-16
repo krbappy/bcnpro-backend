@@ -8,7 +8,10 @@ const {
     setDefaultPaymentMethod,
     createCharge,
     deletePaymentMethod,
-    checkPaymentMethod
+    checkPaymentMethod,
+    getPaymentHistory,
+    getPaymentDetails,
+    getTeamPaymentHistory
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -26,5 +29,10 @@ router.delete('/payment-methods/:id', deletePaymentMethod);
 
 // Route for processing payments
 router.post('/charge', createCharge);
+
+// Routes for payment history
+router.get('/history', getPaymentHistory);
+router.get('/details/:paymentId', getPaymentDetails);
+router.get('/team-history', getTeamPaymentHistory);
 
 module.exports = router; 

@@ -476,6 +476,263 @@ const checkPaymentMethod = asyncHandler(async (req, res) => {
     res.json(paymentMethodInfo);
 });
 
+// @desc    Get payment and billing history for a user
+// @route   GET /api/payments/history
+// @access  Private
+const getPaymentHistory = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+    
+    // Check if user has a Stripe customer ID
+    if (!user.stripeCustomerId) {
+        return res.json({
+            paymentIntents: [],
+            bookingPayments: []
+        });
+    }
+
+    try {
+        // Get payment intents from Stripe
+        const paymentIntents = await stripe.paymentIntents.list({
+            customer: user.stripeCustomerId,
+            limit: 100 // adjust as needed
+        });
+
+        // Get booking payment history from our database
+        const bookingPayments = await Booking.find(
+            { 
+                user: req.user.id, 
+                isPaid: true 
+            }, 
+            {
+                _id: 1,
+                price: 1,
+                currency: 1,
+                paymentStatus: 1,
+                paymentIntentId: 1,
+                paymentMethodId: 1,
+                paidAt: 1,
+                createdAt: 1,
+                stops: 1,
+                routeDistance: 1,
+                orderStatus: 1
+            }
+        ).sort({ paidAt: -1 });
+
+        // Combine the data
+        const combinedHistory = {
+            paymentIntents: paymentIntents.data,
+            bookingPayments: bookingPayments
+        };
+
+        res.json(combinedHistory);
+    } catch (error) {
+        console.error('Error fetching payment history:', error);
+        res.status(500);
+        throw new Error(`Failed to fetch payment history: ${error.message}`);
+    }
+});
+
+// @desc    Get detailed information about a specific payment
+// @route   GET /api/payments/details/:paymentId
+// @access  Private
+const getPaymentDetails = asyncHandler(async (req, res) => {
+    const { paymentId } = req.params;
+    
+    if (!paymentId) {
+        res.status(400);
+        throw new Error('Payment ID is required');
+    }
+    
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+    
+    try {
+        // First check if this is a Stripe payment intent
+        if (paymentId.startsWith('pi_')) {
+            const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
+            
+            // Verify this payment belongs to the user
+            if (paymentIntent.customer !== user.stripeCustomerId) {
+                res.status(403);
+                throw new Error('Not authorized to access this payment');
+            }
+            
+            // Get the payment method details
+            let paymentMethod = null;
+            if (paymentIntent.payment_method) {
+                paymentMethod = await stripe.paymentMethods.retrieve(paymentIntent.payment_method);
+            }
+            
+            // Find related booking if any
+            const booking = await Booking.findOne({ paymentIntentId: paymentId });
+            
+            res.json({
+                type: 'stripe_payment',
+                paymentIntent,
+                paymentMethod,
+                relatedBooking: booking || null
+            });
+        } else {
+            // If not a Stripe ID, it might be a booking ID
+            const booking = await Booking.findById(paymentId);
+            
+            if (!booking) {
+                res.status(404);
+                throw new Error('Payment not found');
+            }
+            
+            // Verify this booking belongs to the user
+            if (booking.user.toString() !== req.user.id) {
+                res.status(403);
+                throw new Error('Not authorized to access this booking');
+            }
+            
+            // Get payment intent if it exists
+            let paymentIntent = null;
+            let paymentMethod = null;
+            
+            if (booking.paymentIntentId) {
+                paymentIntent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+                
+                if (paymentIntent.payment_method) {
+                    paymentMethod = await stripe.paymentMethods.retrieve(paymentIntent.payment_method);
+                }
+            }
+            
+            res.json({
+                type: 'booking_payment',
+                booking,
+                paymentIntent,
+                paymentMethod
+            });
+        }
+    } catch (error) {
+        console.error('Error fetching payment details:', error);
+        res.status(500);
+        throw new Error(`Failed to fetch payment details: ${error.message}`);
+    }
+});
+
+// @desc    Get payment and billing history for a team
+// @route   GET /api/payments/team-history
+// @access  Private (Team admins only)
+const getTeamPaymentHistory = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+    
+    if (!user.team) {
+        res.status(400);
+        throw new Error('User is not part of a team');
+    }
+    
+    // Get the team and its members
+    const team = await Team.findById(user.team)
+        .populate('owner')
+        .populate('members.user');
+    
+    if (!team) {
+        res.status(404);
+        throw new Error('Team not found');
+    }
+    
+    // Check if user is a team admin or the owner
+    const isTeamAdmin = team.owner._id.toString() === req.user.id || 
+                        team.members.some(m => m.user._id.toString() === req.user.id && m.isAdmin);
+    
+    if (!isTeamAdmin) {
+        res.status(403);
+        throw new Error('Not authorized to view team payment history');
+    }
+    
+    try {
+        // Get all team members with Stripe customer IDs
+        const teamMembers = [
+            team.owner,
+            ...team.members.map(member => member.user)
+        ].filter(member => member && member.stripeCustomerId);
+        
+        // Fetch payment intents for all team members
+        const paymentIntentsPromises = teamMembers.map(async (member) => {
+            const intents = await stripe.paymentIntents.list({
+                customer: member.stripeCustomerId,
+                limit: 50 // adjust as needed
+            });
+            
+            return intents.data.map(intent => ({
+                ...intent,
+                memberName: member.name || member.email,
+                memberEmail: member.email
+            }));
+        });
+        
+        const allPaymentIntents = await Promise.all(paymentIntentsPromises);
+        
+        // Get all team members' booking payments
+        const memberIds = teamMembers.map(member => member._id);
+        const bookingPaymentsPromises = memberIds.map(async (memberId) => {
+            const member = teamMembers.find(m => m._id.toString() === memberId.toString());
+            
+            const bookings = await Booking.find(
+                { 
+                    user: memberId, 
+                    isPaid: true 
+                }, 
+                {
+                    _id: 1,
+                    user: 1,
+                    price: 1,
+                    currency: 1,
+                    paymentStatus: 1,
+                    paymentIntentId: 1,
+                    paymentMethodId: 1,
+                    paidAt: 1,
+                    createdAt: 1,
+                    stops: 1,
+                    routeDistance: 1,
+                    orderStatus: 1
+                }
+            ).sort({ paidAt: -1 });
+            
+            return bookings.map(booking => ({
+                ...booking.toObject(),
+                memberName: member.name || member.email,
+                memberEmail: member.email
+            }));
+        });
+        
+        const allBookingPayments = await Promise.all(bookingPaymentsPromises);
+        
+        // Combine all the data
+        const teamHistory = {
+            paymentIntents: allPaymentIntents.flat().sort((a, b) => 
+                new Date(b.created) - new Date(a.created)
+            ),
+            bookingPayments: allBookingPayments.flat().sort((a, b) => 
+                new Date(b.paidAt || b.createdAt) - new Date(a.paidAt || a.createdAt)
+            )
+        };
+        
+        res.json(teamHistory);
+    } catch (error) {
+        console.error('Error fetching team payment history:', error);
+        res.status(500);
+        throw new Error(`Failed to fetch team payment history: ${error.message}`);
+    }
+});
+
 module.exports = {
     createStripeCustomer,
     createSetupIntent,
@@ -484,5 +741,8 @@ module.exports = {
     setDefaultPaymentMethod,
     createCharge,
     deletePaymentMethod,
-    checkPaymentMethod
+    checkPaymentMethod,
+    getPaymentHistory,
+    getPaymentDetails,
+    getTeamPaymentHistory
 }; 
