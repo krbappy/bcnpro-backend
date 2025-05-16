@@ -12,9 +12,21 @@ const notificationService = {
         try {
             console.log('Creating notification:', { userId, message, type });
             
+            // Validate required fields
+            if (!userId) {
+                console.error('Missing userId in notification');
+                return null;
+            }
+            
+            if (!type || !Object.values(notificationTypes).includes(type)) {
+                console.error(`Invalid notification type: ${type}`);
+                // Default to system type if invalid
+                type = 'system';
+            }
+            
             const notification = await Notification.create({
                 userId,
-                message,
+                message: message || 'New notification',
                 type
             });
 
@@ -30,7 +42,8 @@ const notificationService = {
             return notification;
         } catch (error) {
             console.error('Error sending notification:', error);
-            throw error;
+            // Log but don't throw the error to prevent disrupting the main process
+            return null;
         }
     },
 
@@ -72,6 +85,17 @@ const notificationService = {
     // Team related notifications
     async sendTeamNotification({ userId, teamName, action }, io) {
         console.log('Sending team notification:', { userId, teamName, action });
+        
+        // Validate parameters
+        if (!userId) {
+            console.error('Missing userId in team notification');
+            return null;
+        }
+        
+        if (!teamName) {
+            console.error('Missing teamName in team notification');
+            teamName = 'your team';
+        }
         
         const messages = {
             created: `You have been added to team "${teamName}"`,

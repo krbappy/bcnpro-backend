@@ -10,6 +10,10 @@ const teamSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    location: {
+        type: String,
+        default: ''
+    },
     members: [{
         user: {
             type: mongoose.Schema.Types.ObjectId,

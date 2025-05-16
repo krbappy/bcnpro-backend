@@ -8,7 +8,7 @@ const notificationService = require('../services/notificationService');
 // @access  Private
 const createTeam = async (req, res) => {
     try {
-        const { name } = req.body;
+        const { name, location } = req.body;
         
         // Get the authenticated user
         const user = await User.findById(req.user.id);
@@ -24,6 +24,7 @@ const createTeam = async (req, res) => {
         // Create new team
         const team = await Team.create({
             name,
+            location,
             owner: user._id,
             members: [{ user: user._id, role: 'admin', invitationStatus: 'accepted' }]
         });
@@ -34,12 +35,17 @@ const createTeam = async (req, res) => {
         await user.save();
         
         // Send notification to team creator
-        const io = req.app.get('io');
-        await notificationService.sendTeamNotification({
-            userId: req.user._id,
-            teamName: team.name,
-            action: 'created'
-        }, io);
+        try {
+            const io = req.app.get('io');
+            await notificationService.sendTeamNotification({
+                userId: user._id,
+                teamName: team.name,
+                action: 'created'
+            }, io);
+        } catch (notificationError) {
+            console.error('Failed to send team creation notification:', notificationError.message);
+            // We don't want to fail team creation if notification fails
+        }
 
         res.status(201).json(team);
     } catch (error) {
@@ -438,6 +444,69 @@ const deleteTeam = async (req, res) => {
     }
 };
 
+// @desc    Update team details
+// @route   PUT /api/teams/:id
+// @access  Private (Admin only)
+const updateTeam = async (req, res) => {
+    try {
+        const { name, location } = req.body;
+        
+        // Get the team
+        const team = await Team.findById(req.params.id);
+        if (!team) {
+            return res.status(404).json({ message: 'Team not found' });
+        }
+        
+        // Check if requester is the team owner or admin
+        const isAdmin = team.members.some(member => 
+            member.user.equals(req.user.id) && member.role === 'admin'
+        );
+        
+        if (!team.owner.equals(req.user.id) && !isAdmin) {
+            return res.status(403).json({ message: 'Not authorized to update team details' });
+        }
+        
+        // Update team details
+        if (name) team.name = name;
+        if (location !== undefined) team.location = location;
+        
+        await team.save();
+        
+        // Send notification about team update
+        const io = req.app.get('io');
+        await notificationService.sendTeamNotification({
+            userId: req.user._id,
+            teamName: team.name,
+            action: 'updated'
+        }, io);
+        
+        res.status(200).json(team);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Get all teams
+// @route   GET /api/teams
+// @access  Private (Admin only)
+const getAllTeams = async (req, res) => {
+    try {
+        // Check if the user is an admin
+        const user = await User.findById(req.user.id);
+        if (!user || !user.isAdmin) {
+            return res.status(403).json({ message: 'Not authorized to access this resource' });
+        }
+        
+        const teams = await Team.find({})
+            .populate('owner', 'name email')
+            .populate('members.user', 'name email');
+        
+        res.json(teams);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
 module.exports = {
     createTeam,
     getTeam,
@@ -445,5 +514,7 @@ module.exports = {
     inviteToTeam,
     acceptInvitation,
     removeTeamMember,
-    deleteTeam
+    deleteTeam,
+    updateTeam,
+    getAllTeams
 }; 
